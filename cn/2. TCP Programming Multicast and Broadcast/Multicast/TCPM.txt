@@ -1,0 +1,140 @@
+server
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <winsock2.h>
+#include <iphlpapi.h>
+#include <winsock2.h>
+
+#ifndef IP_MULTICAST_TTL
+#define IP_MULTICAST_TTL 10
+#endif
+
+
+#pragma comment(lib, "ws2_32.lib")
+
+#define MULTICAST_GROUP "239.0.0.1"
+#define MULTICAST_PORT 12345
+#define BUFFER_SIZE 1024
+
+int main() {
+    WSADATA wsaData;
+    SOCKET serverSocket;
+    SOCKADDR_IN serverAddr, multicastAddr;
+    char buffer[BUFFER_SIZE];
+    int bytesSent, bytesRecv, multicastTtl = 1;
+
+    // Initialize Winsock
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        printf("WSAStartup failed: %d\n", WSAGetLastError());
+        return 1;
+    }
+
+    // Create server socket
+    serverSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (serverSocket == INVALID_SOCKET) {
+        printf("socket failed: %d\n", WSAGetLastError());
+        WSACleanup();
+        return 1;
+    }
+
+    // Set socket options
+    setsockopt(serverSocket, IPPROTO_IP, IP_MULTICAST_TTL, (char*)&multicastTtl, sizeof(multicastTtl));
+
+    // Bind server socket to any available IP address and port
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
+    serverAddr.sin_port = htons(MULTICAST_PORT);
+    if (bind(serverSocket, (SOCKADDR*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+        printf("bind failed: %d\n", WSAGetLastError());
+        closesocket(serverSocket);
+        WSACleanup();
+        return 1;
+    }
+
+    // Set up multicast address
+    multicastAddr.sin_family = AF_INET;
+    multicastAddr.sin_addr.s_addr = inet_addr(MULTICAST_GROUP);
+    multicastAddr.sin_port = htons(MULTICAST_PORT);
+
+    while (1) {
+        // Receive data from client
+        bytesRecv = recvfrom(serverSocket, buffer, BUFFER_SIZE, 0, NULL, NULL);
+        if (bytesRecv == SOCKET_ERROR) {
+            printf("recvfrom failed: %d\n", WSAGetLastError());
+            break;
+        }
+
+        // Send data to multicast group
+        bytesSent = sendto(serverSocket, buffer, bytesRecv, 0, (SOCKADDR*)&multicastAddr, sizeof(multicastAddr));
+        if (bytesSent == SOCKET_ERROR) {
+            printf("sendto failed: %d\n", WSAGetLastError());
+            break;
+        }
+    }
+
+    // Clean up
+    closesocket(serverSocket);
+    WSACleanup();
+
+    return 0;
+}
+
+
+client
+
+#include <stdio.h>
+#include <winsock2.h>
+
+int main()
+{
+    // Initialize Winsock
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2,2), &wsa) != 0) {
+        printf("Failed to initialize Winsock\n");
+        return 1;
+    }
+
+    // Create a socket
+    SOCKET client_socket;
+    if ((client_socket = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
+        printf("Failed to create socket\n");
+        return 1;
+    }
+
+    // Connect to the server
+    struct sockaddr_in server_addr;
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = inet_addr("127.0.0.1"); // Server IP address
+    server_addr.sin_port = htons(12345);
+
+    if (connect(client_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
+        printf("Failed to connect to server\n");
+        return 1;
+    }
+
+    // Send data to server
+    const char *message = "Hello, server! -> Subroto Rakshit";
+    int send_len = send(client_socket, message, strlen(message), 0);
+    if (send_len == SOCKET_ERROR) {
+        printf("Failed to send data to server\n");
+        return 1;
+    }
+
+    // Receive data from server
+    char buffer[1024];
+    int recv_len = recv(client_socket, buffer, sizeof(buffer), 0);
+    if (recv_len == SOCKET_ERROR) {
+        printf("Failed to receive data from server\n");
+        return 1;
+    }
+
+    // Process received data
+    printf("Received %d bytes: %.*s\n", recv_len, recv_len, buffer);
+
+    // Cleanup
+    closesocket(client_socket);
+    WSACleanup();
+
+    return 0;
+}
